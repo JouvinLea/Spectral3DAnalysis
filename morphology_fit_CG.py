@@ -57,11 +57,14 @@ E1 = energy_bins[0].value
 E2 = energy_bins[1].value
 on = SkyImageCollection.read(outdir_data + "/fov_bg_maps" + str(E1) + "_" + str(E2) + "_TeV.fits")["counts"]
 
-if "dec" in input_param["general"]["sourde_name_skycoord"]:
-    source_center = SkyCoord(input_param["general"]["sourde_name_skycoord"]["ra"],
-                             input_param["general"]["sourde_name_skycoord"]["dec"], unit="deg")
+
+if "l_gal" in input_param["param_SgrA"]["sourde_name_skycoord2"]:
+    source_center =  SkyCoord(input_param["param_SgrA"]["sourde_name_skycoord2"]["l_gal"],
+                                  input_param["param_SgrA"]["sourde_name_skycoord2"]["b_gal"], unit='deg',
+                                  frame="galactic").icrs
 else:
     source_center = SkyCoord.from_name(input_param["general"]["sourde_name_skycoord"])
+
 
 param_fit = input_param["param_fit_morpho"]
 if param_fit["gauss_SgrA"]["fit"]:
@@ -103,7 +106,10 @@ for i_E, E in enumerate(energy_bins[0:-1]):
     CS = make_CS_model(outdir_data, on, None, param_fit["CS"]["ampl_frozen"],
                        param_fit["CS"]["threshold_map"])
     # modele gauss pour sgrA centre sur SgrA
-    source_center_SgrA = SkyCoord.from_name(input_param["param_SgrA"]["sourde_name_skycoord"])
+    #source_center_SgrA = SkyCoord.from_name(input_param["param_SgrA"]["sourde_name_skycoord"])
+    source_center_SgrA = SkyCoord(input_param["param_SgrA"]["sourde_name_skycoord2"]["l_gal"],
+                                  input_param["param_SgrA"]["sourde_name_skycoord2"]["b_gal"], unit='deg',
+                                  frame="galactic")
     xpos_SgrA, ypos_SgrA = skycoord_to_pixel(source_center_SgrA, on.wcs)
     xpos_GC, ypos_GC = skycoord_to_pixel(source_center_SgrA, on.wcs)
     xpos_SgrA += 0.5
@@ -260,7 +266,11 @@ for i_E, E in enumerate(energy_bins[0:-1]):
         l = coord.l[0, :]
         l.value[np.where(l > 180 * u.deg)] = l.value[np.where(l > 180 * u.deg)] - 360
         resid_l_rebin, l_rebin, err_l_rebin = rebin_profile(profile_l_resid, l, err_l, nrebin=3)
-
+        nrebin=3
+        npix_l2 = rebin_profile2(npix_l, nrebin)
+        profile_l_on_rebin=rebin_profile2(profile_l_on, nrebin)
+        err_l2 = np.sqrt(profile_l_on_rebin / npix_l2)
+        
         # Latitude profile
         l_center = on.center.l
         if l_center > 180 * u.deg:
@@ -329,7 +339,6 @@ for i_E, E in enumerate(energy_bins[0:-1]):
         if i_src==len(list_src)-1:
             model = bkg + psf_SgrA(mygaus_SgrA) + psf_G0p9(mygaus_G0p9)
             set_full_model(model)
-
             # Profil lattitude et longitude
             shape = np.shape(on.data)
             mask = get_data().mask.reshape(shape)
@@ -337,10 +346,49 @@ for i_E, E in enumerate(energy_bins[0:-1]):
             model_map =SkyImage.empty_like(on)
             map_data.data = get_data().y.reshape(shape) * mask
             model_map.data = get_model()(get_data().x0, get_data().x1).reshape(shape) * mask
-
+            
             resid = map_data.data - model_map.data
             coord = on.coordinates()
-
+            list_model=list()
+            list_name_model=list()
+            list_data_model=list()
+            list_data_resid=list()
+            if param_fit["invert_CS_LS"]:
+                model+=psf_SgrA(Large_Scale)
+                list_model.append(model)
+                model+=psf_SgrA(Large_Scale)
+                list_model.append(model)
+                list_name_model.append("Gauss_to_CS")
+                list_name_model.append("Large scale")
+            else:
+                if param_fit["Large scale"]["fit"]:
+                    model+=psf_SgrA(Large_Scale)
+                    list_model.append(model)
+                    list_name_model.append("Large scale")
+                if param_fit["Gauss_to_CS"]["fit"]:
+                    model+=psf_SgrA(gaus_CS * CS)
+                    list_model.append(model)
+                    list_name_model.append("Gauss_to_CS")
+            if param_fit["central_gauss"]["fit"]:
+                model+=psf_SgrA(central_gauss)
+                list_model.append(model)
+                list_name_model.append("central_gauss")
+            if param_fit["arc source"]["fit"]:
+                model+=psf_SgrA(arc_source)
+                list_model.append(model)
+                list_name_model.append("arc source")
+            if param_fit["SgrB2"]["fit"]:
+                model+=psf_SgrA(sgrB2)
+                list_model.append(model)
+                list_name_model.append("SgrB2")
+            for model in list_model:
+                set_full_model(model)
+                model_maps = get_model()(get_data().x0, get_data().x1).reshape(shape) * mask
+                resid_maps = map_data.data - model_maps
+                list_data_model.append(model_maps)
+                list_data_resid.append(resid_maps)
+            
+                    
             # Longitude profile
             i_b = np.where((coord.b[:, 0] < on.center.b + 0.15 * u.deg) & (coord.b[:, 0] > on.center.b - 0.15 * u.deg))[0]
             npix_l = np.sum(np.flipud(mask[i_b, :]), axis=0)
@@ -353,7 +401,9 @@ for i_E, E in enumerate(energy_bins[0:-1]):
             l = coord.l[0, :]
             l.value[np.where(l > 180 * u.deg)] = l.value[np.where(l > 180 * u.deg)] - 360
             resid_l_rebin, l_rebin, err_l_rebin = rebin_profile(profile_l_resid, l, err_l, nrebin=3)
-
+            
+            
+        
             # Latitude profile
             l_center = on.center.l
             if l_center > 180 * u.deg:
@@ -366,21 +416,37 @@ for i_E, E in enumerate(energy_bins[0:-1]):
             err_b = np.sqrt(profile_b_on / npix_b)
             resid_b_rebin, b_rebin, err_b_rebin = rebin_profile(profile_b_resid, coord.b[:, 0], err_b, nrebin=3)
 
+            profile_l_models=np.zeros((len(profile_l_model),len(list_model)))
+            profile_l_resids=np.zeros((len(profile_l_model),len(list_model)))
+            resid_l_rebins=np.zeros((len(resid_l_rebin),len(list_model)))
+            err_l_rebins=np.zeros((len(resid_l_rebin),len(list_model)))
+            profile_b_models=np.zeros((len(profile_b_model),len(list_model)))
+            for i_model,model in enumerate(list_model):
+                profile_l_models[:,i_model]=np.sum(list_data_model[i_model][i_b, :], axis=0) / npix_l
+                profile_b_models[:,i_model]=np.sum(list_data_model[i_model][:, i_l], axis=1) / npix_b
+                profile_l_resids[:,i_model] = np.sum(list_data_resid[i_model][i_b, :], axis=0) / npix_l
+                resid_l_rebins[:,i_model], l_rebin, err_l_rebins[:,i_model] = rebin_profile(profile_l_resids[:,i_model], l, err_l, nrebin=3)
+            #import IPython; IPython.embed()
             fig = pt.figure()
             ax = fig.add_subplot(2, 1, 1)
             pt.plot(l.value, profile_l_model, label="model")
             pt.plot(l.value, profile_l_on, label="on data")
+            for i_model,model in enumerate(list_model):
+                pt.plot(l.value, profile_l_models[:,i_model], label=list_name_model[i_model])
             pt.xlim(-1.5, 1.5)
             pt.gca().invert_xaxis()
             pt.legend()
             ax = fig.add_subplot(2, 1, 2)
             pt.errorbar(l_rebin.value, resid_l_rebin, yerr=err_l_rebin, linestyle='None', marker="o",
                         label="Step= " + str(i_src))
+            for i_model,model in enumerate(list_model):
+                pt.errorbar(l_rebin.value, resid_l_rebins[:,i_model], yerr=err_l_rebins[:,i_model], linestyle='None', marker="o",label=list_name_model[i_model])
+                #pt.scatter(l_rebin.value, resid_l_rebins[:,i_model], marker="o",label=list_name_model[i_model])
             pt.axhline(y=0, color='red', linewidth=2)
             pt.legend()
             pt.ylabel("residual")
             pt.xlabel("longitude (degrees)")
-            pt.title("longitude profile")
+            pt.title("Final step: different components")
             pt.xlim(-1.5, 1.5)
             pt.gca().invert_xaxis()
             pdf_lon.savefig()
