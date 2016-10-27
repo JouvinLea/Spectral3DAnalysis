@@ -24,8 +24,9 @@ from sherpa.models import NormGauss2D, PowLaw1D, TableModel, Const2D
 
 from sherpa.stats import Cash, Chi2ConstVar
 from sherpa.optmethods import LevMar, NelderMead
+from sherpa.estmethods import Confidence, Covariance
 from sherpa.fit import Fit
-from gammapy.cube.sherpa_ import Data3D, CombinedModel3D
+from gammapy.cube.sherpa_ import Data3D, CombinedModel3D, CombinedModel3D2
 
 import yaml
 import sys
@@ -39,6 +40,7 @@ Estimation de la morphologie de la source (notamment de la fwhm de la gaussienne
 
 input_param=yaml.load(open(sys.argv[1]))
 #Input param fit and source configuration
+image_size= input_param["general"]["image_size"]
 extraction_region=input_param["param_fit"]["extraction_region"]
 freeze_bkg=input_param["param_fit"]["freeze_bkg"]
 source_name=input_param["general"]["source_name"]
@@ -56,8 +58,8 @@ energy_centers=energy_bins.log_centers
 
 #outdir data and result
 config_name = input_param["general"]["config_name"]
-outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name)
-outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name)
+outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name,image_size)
+outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size)
 
 #Pour pouvoir definir la gaussienne centre sur la source au centre des cartes en general
 E1 = energy_bins[0].value
@@ -142,6 +144,7 @@ spatial_model = NormGauss2D('spatial-model')
 #spatial_model = normgauss2dint('spatial-model')
 spectral_model = PowLaw1D('spectral-model')
 source_model = CombinedModel3D(spatial_model=spatial_model, spectral_model=spectral_model)
+source_model2 = CombinedModel3D2(use_psf=True,exposure=exposure_data,psf=psf_data,spatial_model=spatial_model, spectral_model=spectral_model)
 
 # Set starting values
 if "dec" in input_param["general"]["sourde_name_skycoord"]:
@@ -152,6 +155,8 @@ else:
 source_model.gamma = 2.2
 source_model.xpos = center.l.value
 source_model.ypos = center.b.value
+source_model.xpos.freeze()
+source_model.ypos.freeze()
 source_model.fwhm = 0.12
 #source_model.fwhm = 0.15
 #source_model.fwhm = 0.13
@@ -172,17 +177,25 @@ source_model.ampl=1.0
 #omega = TableModel('omega')
 #omega.load(None, omega.ravel())
 #model = bkg+1E-11 * exposure * (source_model) # 1E-11 flux factor
-model = bkg+1E-11 * exposure * (source_model) # 1E-9 flux factor
+#model = bkg+1E-11 * exposure * (source_model) # 1E-9 flux factor
+model = bkg+1E-11 * (source_model2)
 #model = bkg+1E-11 * omega*exposure * (source_model) 
 #model = bkg+1E-7 * exposure * (source_model) # 1E-9 flux factor
 
 # Fit
 # For now only Chi2 statistics seems to work, using Cash, the optimizer doesn't run at all,
 # maybe because of missing background model?
-fit = Fit(data=cube, model=model, stat=Cash(), method=LevMar())
+#fit = Fit(data=cube, model=model, stat=Cash(), method=NelderMead(), estmethod=Covariance())
+#fit = Fit(data=cube, model=model, stat=Cash(), method=NelderMead(), estmethod=Confidence())
+fit = Fit(data=cube, model=model, stat=Cash(), method=NelderMead(), estmethod=Covariance())
 #fit = Fit(data=cube, model=model, stat=Cash(), method=NelderMead())
 #fit = Fit(data=cube, model=model, stat="cstat", method=LevMar())
 #fit = Fit(data=cube, model=model, stat=Chi2ConstVar(), method=LevMar())
 result = fit.fit()
-print(result)
+#result2 = fit2.fit()
+err=fit.est_errors()
+#err=fit2.conf()
+#print(result)
+#print(result2)
+print(err)
 
