@@ -11,7 +11,7 @@ from gammapy.background import EnergyOffsetBackgroundModel
 from gammapy.utils.energy import EnergyBounds, Energy
 from gammapy.data import DataStore
 from gammapy.utils.axis import sqrt_space
-from gammapy.image import bin_events_in_image, disk_correlate, SkyImage, SkyMask, SkyImageCollection
+from gammapy.image import disk_correlate, SkyImage, SkyMask, SkyImageList
 from gammapy.background import fill_acceptance_image
 from gammapy.stats import significance
 from gammapy.background import OffDataBackgroundMaker
@@ -19,7 +19,7 @@ from gammapy.data import ObservationTable
 import matplotlib.pyplot as plt
 from gammapy.utils.scripts import make_path
 from gammapy.extern.pathlib import Path
-from gammapy.scripts import MosaicImage
+from gammapy.scripts import StackedObsImageMaker
 from gammapy.data import ObservationList
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,7 +27,7 @@ from astropy.coordinates import SkyCoord
 from gammapy.data import ObservationTable
 from gammapy.utils.scripts import make_path
 from gammapy.extern.pathlib import Path
-from gammapy.scripts import MosaicImage
+from gammapy.scripts import StackedObsImageMaker
 from gammapy.data import ObservationList
 from gammapy.image import SkyImage
 from gammapy.data import DataStore
@@ -44,7 +44,7 @@ Method to compute the images and psf of a given source
 """
 
 
-def make_outdir(source_name, name_bkg, n_binE):
+def make_outdir(source_name, name_bkg, n_binE,config_name,image_size):
     """
 
     Parameters
@@ -54,9 +54,9 @@ def make_outdir(source_name, name_bkg, n_binE):
 
     Returns
     -------
-    directory where your fits file ill go
+    directory where your fits file will go
     """
-    outdir = os.path.expandvars('$Image') + "/Image_" + source_name + "_bkg_" + name_bkg + "/binE_" + str(n_binE)
+    outdir = os.path.expandvars('$Image') +"/"+config_name + "/Image_" + source_name + "_bkg_" + name_bkg + "/binE_" + str(n_binE) +"_size_image_"+str(image_size)+"_pix"
     try:
         shutil.rmtree(outdir)
     except Exception:
@@ -65,7 +65,7 @@ def make_outdir(source_name, name_bkg, n_binE):
     return outdir
 
 
-def make_obsdir(source_name, name_bkg):
+def make_obsdir(source_name, name_bkg,config_name):
     """
 
     Parameters
@@ -77,7 +77,7 @@ def make_obsdir(source_name, name_bkg):
     -------
     directory where your data for your image are located
     """
-    return os.path.expandvars('$Image') + "/Image_" + source_name + "_bkg_" + name_bkg + "/data"
+    return os.path.expandvars('$Image') +"/"+config_name + "/Image_" + source_name + "_bkg_" + name_bkg + "/data"
 
 
 def make_new_directorydataset(nobs, config_directory, source_name, center, obsdir):
@@ -166,8 +166,8 @@ def add_bkgmodel_to_indextable(bkg_model_directory, source_name, obsdir):
     index_table.write(fn, overwrite=True)
 
 
-def make_images(energy_band, offset_band, center, data_store, obs_table_subset, exclusion_mask, outdir,
-                make_background_image=True, spectral_index=2.3, for_integral_flux=False, radius=10.):
+def make_images(image_size, energy_band, offset_band, center, data_store, obs_table_subset, exclusion_mask, outdir,
+                make_background_image=True, spectral_index=2.3, for_integral_flux=False, radius=10.,save_bkg_norm=True):
     """
     MAke the counts, bkg, mask, exposure, significance and ecxees images
     Parameters
@@ -190,23 +190,26 @@ def make_images(energy_band, offset_band, center, data_store, obs_table_subset, 
 
     """
     # TODO: fix `binarize` implementation
-    image = SkyImage.empty(nxpix=250, nypix=250, binsz=0.02, xref=center.galactic.l.deg,
+    image = SkyImage.empty(nxpix=image_size, nypix=image_size, binsz=0.02, xref=center.galactic.l.deg,
                            yref=center.galactic.b.deg, proj='TAN', coordsys='GAL')
     refheader = image.to_image_hdu().header
     exclusion_mask = exclusion_mask.reproject(reference=refheader)
-    mosaicimages = MosaicImage(image, energy_band=energy_band, offset_band=offset_band, data_store=data_store,
-                               obs_table=obs_table_subset, exclusion_mask=exclusion_mask)
+    mosaicimages = StackedObsImageMaker(image, energy_band=energy_band, offset_band=offset_band, data_store=data_store,
+                                        obs_table=obs_table_subset, exclusion_mask=exclusion_mask,save_bkg_scale=save_bkg_norm)
     mosaicimages.make_images(make_background_image=make_background_image, spectral_index=spectral_index,
                              for_integral_flux=for_integral_flux, radius=radius)
     filename = outdir + '/fov_bg_maps' + str(energy_band[0].value) + '_' + str(energy_band[1].value) + '_TeV.fits'
-    if 'COMMENT' in mosaicimages.maps["exclusion"].meta:
-        del mosaicimages.maps["exclusion"].meta['COMMENT']
+    if 'COMMENT' in mosaicimages.images["exclusion"].meta:
+        del mosaicimages.images["exclusion"].meta['COMMENT']
     write_mosaic_images(mosaicimages, filename)
+    if save_bkg_norm:
+        filename_bkg_norm = outdir + '/table_bkg_norm_' + str(energy_band[0].value) + '_' + str(energy_band[1].value) + '_TeV.fits'
+        mosaicimages.table_bkg_scale.write(filename_bkg_norm)
 
 
-def make_images_several_energyband(energy_bins, offset_band, source_name, center, data_store, obs_table_subset,
+def make_images_several_energyband(image_size,energy_bins, offset_band, source_name, center, data_store, obs_table_subset,
                                    exclusion_mask, outdir, make_background_image=True, spectral_index=2.3,
-                                   for_integral_flux=False, radius=10.):
+                                   for_integral_flux=False, radius=10.,save_bkg_norm=True):
     """
     MAke the counts, bkg, mask, exposure, significance and ecxees images for different energy bands
 
@@ -231,8 +234,8 @@ def make_images_several_energyband(energy_bins, offset_band, source_name, center
     for i, E in enumerate(energy_bins[0:-1]):
         energy_band = Energy([energy_bins[i].value, energy_bins[i + 1].value], energy_bins.unit)
         print energy_band
-        make_images(energy_band, offset_band, center, data_store, obs_table_subset, exclusion_mask, outdir,
-                    make_background_image, spectral_index, for_integral_flux, radius)
+        make_images(image_size,energy_band, offset_band, center, data_store, obs_table_subset, exclusion_mask, outdir,
+                    make_background_image, spectral_index, for_integral_flux, radius,save_bkg_norm)
 
 
 def make_psf(energy_band, source_name, center, ObsList, outdir, spectral_index=2.3):
@@ -255,7 +258,6 @@ def make_psf(energy_band, source_name, center, ObsList, outdir, spectral_index=2
     # Here all the observations have a center at less than 2 degrees from the Crab so it will be ok to estimate the mean psf on the Crab source postion (the area is define for offset equal to 2 degrees...)
     psf_energydependent = ObsList.make_psf(center, energy, theta=None)
     psf_table = psf_energydependent.table_psf_in_energy_band(energy_band, spectral_index=spectral_index)
-    # import IPython; IPython.embed()
     Table_psf = Table()
     c1 = Column(psf_table._dp_domega, name='psf_value', unit=psf_table._dp_domega.unit)
     c2 = Column(psf_table._offset, name='theta', unit=psf_table._offset.unit)
@@ -302,4 +304,4 @@ def write_mosaic_images(mosaicimages, filename):
 
     """
     log.info('Writing {}'.format(filename))
-    mosaicimages.maps.write(filename, clobber=True)
+    mosaicimages.images.write(filename, clobber=True)

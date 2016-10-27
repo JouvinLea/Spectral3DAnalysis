@@ -5,18 +5,17 @@ from astropy.table import Table
 from astropy.table import Column
 import astropy.units as u
 from IPython.core.display import Image
-from gammapy.image import SkyImageCollection, SkyImage
+from gammapy.image import SkyImageList, SkyImage
 import astropy.units as u
 import pylab as pt
 from gammapy.background import fill_acceptance_image
 from gammapy.utils.energy import EnergyBounds
 from astropy.coordinates import Angle
 from astropy.units import Quantity
-from gammapy.detect import compute_ts_map
+from gammapy.detect import compute_ts_image
 import numpy as np
 from astropy.wcs.utils import pixel_to_skycoord, skycoord_to_pixel
 from astropy.coordinates import SkyCoord
-from utilities import *
 from method_fit import *
 from astropy.convolution import Gaussian2DKernel
 import yaml
@@ -31,28 +30,31 @@ Estimation de la morphologie de la source (notamment de la fwhm de la gaussienne
 
 input_param=yaml.load(open(sys.argv[1]))
 #Input param fit and source configuration
+image_size= input_param["general"]["image_size"]
 extraction_region=input_param["param_fit"]["extraction_region"]
 freeze_bkg=input_param["param_fit"]["freeze_bkg"]
 source_name=input_param["general"]["source_name"]
 name_method_fond = input_param["general"]["name_method_fond"]
 name="_region_"+str(extraction_region)+"pix"
 if freeze_bkg:
-    name+="_bkg_free"
-else:
     name+="_bkg_fix"
+else:
+    name+="_bkg_free"
+    
     
 #Energy binning
 energy_bins = EnergyBounds.equal_log_spacing(input_param["energy binning"]["Emin"], input_param["energy binning"]["Emax"], input_param["energy binning"]["nbin"], 'TeV')
 energy_centers=energy_bins.log_centers
 
 #outdir data and result
-outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins))
-outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins))
+config_name = input_param["general"]["config_name"]
+outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name,image_size)
+outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size)
 
 #Pour pouvoir definir la gaussienne centre sur la source au centre des cartes en general
 E1 = energy_bins[0].value
 E2 = energy_bins[1].value
-on = SkyImageCollection.read(outdir_data+"/fov_bg_maps"+str(E1)+"_"+str(E2)+"_TeV.fits")["counts"]
+on = SkyImageList.read(outdir_data+"/fov_bg_maps"+str(E1)+"_"+str(E2)+"_TeV.fits")["counts"]
 
 if "dec" in input_param["general"]["sourde_name_skycoord"]:
         source_center = SkyCoord(input_param["general"]["sourde_name_skycoord"]["ra"], input_param["general"]["sourde_name_skycoord"]["dec"], unit="deg")
@@ -70,23 +72,22 @@ fwhm_frozen=False
 ampl_frozen=False
 xpos_frozen=input_param["param_fit"]["gauss_configuration"]["xpos_frozen"]
 ypos_frozen=input_param["param_fit"]["gauss_configuration"]["ypos_frozen"]
-source_model=source_punctual_model(source_center, fwhm_init,fwhm_frozen, ampl_init, ampl_frozen, xpos_init, xpos_frozen, ypos_init, ypos_frozen)
+source_model=source_punctual_model(source_name, fwhm_init,fwhm_frozen, ampl_init, ampl_frozen, xpos_init, xpos_frozen, ypos_init, ypos_frozen)
 
 for i_E, E in enumerate(energy_bins[0:-2]):
     E1 = energy_bins[i_E].value
     E2 = energy_bins[i_E+1].value
     
-    on = SkyImageCollection.read(outdir_data+"/fov_bg_maps"+str(E1)+"_"+str(E2)+"_TeV.fits")["counts"]
+    on = SkyImageList.read(outdir_data+"/fov_bg_maps"+str(E1)+"_"+str(E2)+"_TeV.fits")["counts"]
     on.write(outdir_data+"/on_maps"+str(E1)+"_"+str(E2)+"_TeV.fits", clobber=True)
     data = fits.open(outdir_data+"/on_maps"+str(E1)+"_"+str(E2)+"_TeV.fits")
     load_image(1, data)
     exposure=make_exposure_model(outdir_data, E1, E2)
     bkg=make_bkg_model(outdir_data, E1, E2, freeze_bkg)
     psf=make_psf_model(outdir_data, E1, E2, on, source_name)
-    name_interest=region_interest(source_center, on, extraction_region)
-
+    name_interest=region_interest(source_center, on, extraction_region, extraction_region)
     notice2d(name_interest)
-
+    
     set_stat("cstat")
     set_method("neldermead")
 
@@ -125,13 +126,13 @@ for i_E, E in enumerate(energy_bins[0:-2]):
     model_map.data = get_model()(get_data().x0, get_data().x1).reshape(shape) * mask
     exp_map.data= np.ones(map_data.data.shape)* mask
     kernel = Gaussian2DKernel(5)
-    TS=compute_ts_map(map_data, model_map, exp_map, kernel)
+    TS=compute_ts_image(map_data, model_map, exp_map, kernel)
     TS.write(outdir_result+"/TS_map_"+name+"_"+str("%.2f"%E1) + "_" + str("%.2f"%E2) + "_TeV.fits", clobber=True)
     sig=SkyImage.empty(TS["ts"])
     sig.data=np.sqrt(TS["ts"].data)
     sig.name="sig"
     sig.write(outdir_result+"/significance_map_"+name+"_"+ str("%.2f"%E1) + "_" + str("%.2f"%E2) + "_TeV.fits", clobber=True)
-    
+
 filename_table_result=outdir_result+"/morphology_fit_result"+name+".txt"
 table_models.write(filename_table_result, format="ascii")
 filename_covar_result=outdir_result+"/morphology_fit_covar_result"+name+".txt"

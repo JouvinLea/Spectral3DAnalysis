@@ -14,7 +14,7 @@ from gammapy.background import EnergyOffsetBackgroundModel
 from gammapy.utils.energy import EnergyBounds, Energy
 from gammapy.data import DataStore
 from gammapy.utils.axis import sqrt_space
-from gammapy.image import bin_events_in_image, disk_correlate, SkyImage, SkyMask, SkyImageCollection
+from gammapy.image import SkyImage, SkyMask, SkyImageList
 from gammapy.background import fill_acceptance_image
 from gammapy.stats import significance
 from gammapy.background import OffDataBackgroundMaker
@@ -44,6 +44,7 @@ from ImageSource import *
 if __name__ == '__main__':
     input_param=yaml.load(open(sys.argv[1]))
     config_directory = input_param["general"]["config_directory"]
+    config_name = input_param["general"]["config_name"]
     source_name=input_param["general"]["source_name"]
     name_method_fond = input_param["general"]["name_method_fond"]
     if "dec" in input_param["general"]["sourde_name_skycoord"]:
@@ -55,26 +56,26 @@ if __name__ == '__main__':
     nobs = input_param["general"]["nobs"]
 
     # Make the directory where the data are located and create a new hdutable with the link to the acceptance curve to build the bkg images
-    obsdir = make_obsdir(source_name, name_bkg)
+    obsdir = make_obsdir(source_name, name_bkg, config_name)
     if input_param["general"]["make_data_outdir"]:
         if input_param["general"]["use_list_obs"]:
-            make_new_directorydataset_listobs(nobs, config_directory, source_name, center, obsdir, input_param["general"]["list_obs"])
+            make_new_directorydataset_listobs(nobs, config_directory+"/"+config_name, source_name, center, obsdir, input_param["general"]["list_obs"])
         else:
-            make_new_directorydataset(nobs, config_directory, source_name, center, obsdir)
-        add_bkgmodel_to_indextable(bkg_model_directory, source_name, obsdir)
+            make_new_directorydataset(nobs, config_directory+"/"+config_name, source_name, center, obsdir)
+            add_bkgmodel_to_indextable(bkg_model_directory, source_name, obsdir)
 
     # Make the images and psf model for different energy bands
     #Energy binning
     energy_bins = EnergyBounds.equal_log_spacing(input_param["energy binning"]["Emin"], input_param["energy binning"]["Emax"], input_param["energy binning"]["nbin"], 'TeV')
 
-    outdir = make_outdir(source_name, name_bkg, len(energy_bins))
+    outdir = make_outdir(source_name, name_bkg, len(energy_bins),config_name)
     offset_band = Angle([0, 2.49], 'deg')
     data_store = DataStore.from_dir(obsdir)
     exclusion_mask = SkyMask.read(input_param["general"]["exclusion_mask"])
     obs_table_subset = data_store.obs_table[0:nobs]
     make_images_several_energyband(energy_bins, offset_band, source_name, center, data_store, obs_table_subset,
                                    exclusion_mask, outdir, make_background_image=True, spectral_index=2.3,
-                                   for_integral_flux=False, radius=10.)
+                                 for_integral_flux=False, radius=10.)
     obslist = [data_store.obs(id) for id in obs_table_subset["OBS_ID"]]
     ObsList = ObservationList(obslist)
     make_psf_several_energyband(energy_bins, source_name, center, ObsList, outdir,
