@@ -21,6 +21,7 @@ from astropy.convolution import Gaussian2DKernel
 
 from gammapy.cube import SkyCube
 from sherpa.models import NormGauss2D, PowLaw1D, TableModel, Const2D
+from plexpcutoff import MyPLExpCutoff
 
 from sherpa.stats import Cash, Chi2ConstVar
 from sherpa.optmethods import LevMar, NelderMead
@@ -142,7 +143,8 @@ psf.load(None, psf_data.ravel())
 # Setup combined spatial and spectral model
 spatial_model = NormGauss2D('spatial-model')
 #spatial_model = normgauss2dint('spatial-model')
-spectral_model = PowLaw1D('spectral-model')
+#spectral_model = PowLaw1D('spectral-model')
+spectral_model = MyPLExpCutoff('spectral-model')
 source_model = CombinedModel3D(spatial_model=spatial_model, spectral_model=spectral_model)
 source_model2 = CombinedModel3D2(use_psf=True,exposure=exposure_data,psf=psf_data,spatial_model=spatial_model, spectral_model=spectral_model)
 
@@ -179,6 +181,7 @@ source_model.ampl=1.0
 #model = bkg+1E-11 * exposure * (source_model) # 1E-11 flux factor
 #model = bkg+1E-11 * exposure * (source_model) # 1E-9 flux factor
 model = bkg+1E-11 * (source_model2)
+#model = bkg+ (source_model2)
 #model = bkg+1E-11 * omega*exposure * (source_model) 
 #model = bkg+1E-7 * exposure * (source_model) # 1E-9 flux factor
 
