@@ -28,6 +28,7 @@ from sherpa.optmethods import LevMar, NelderMead
 from sherpa.estmethods import Confidence, Covariance
 from sherpa.fit import Fit
 from gammapy.cube.sherpa_ import Data3D, CombinedModel3D, CombinedModel3D2
+from NormGauss2d import NormGauss2DInt
 
 import yaml
 import sys
@@ -97,7 +98,8 @@ for i_E, E in enumerate(energy_bins[0:imax]):
     on = SkyImageList.read(outdir_data+"/fov_bg_maps"+str(E1)+"_"+str(E2)+"_TeV.fits")["counts"]
     on.write(outdir_data+"/on_maps"+str(E1)+"_"+str(E2)+"_TeV.fits", clobber=True)
     counts[i_E,:,:]=on.data
-    exposure_data[i_E,:,:] = SkyImageList.read(outdir_data + "/fov_bg_maps" + str(E1) + "_" + str(E2) + "_TeV.fits")["exposure"].data*1e4*omega
+    #exposure_data[i_E,:,:] = SkyImageList.read(outdir_data + "/fov_bg_maps" + str(E1) + "_" + str(E2) + "_TeV.fits")["exposure"].data*1e4*omega
+    exposure_data[i_E,:,:] = SkyImageList.read(outdir_data + "/fov_bg_maps" + str(E1) + "_" + str(E2) + "_TeV.fits")["exposure"].data*1e4
     #exposure_data[i_E,:,:] = SkyImageList.read(outdir_data + "/fov_bg_maps" + str(E1) + "_" + str(E2) + "_TeV.fits")["exposure"].data
     bkg_data[i_E,:,:] = SkyImageList.read(outdir_data + "/fov_bg_maps" + str(E1) + "_" + str(E2) + "_TeV.fits")["bkg"].data
     psf_file = Table.read(outdir_data + "/psf_table_" + source_name + "_" + str(E1) + "_" + str(E2) + ".fits")
@@ -141,8 +143,9 @@ psf.load(None, psf_data.ravel())
 
 
 # Setup combined spatial and spectral model
-spatial_model = NormGauss2D('spatial-model')
-#spatial_model = normgauss2dint('spatial-model')
+#spatial_model = NormGauss2D('spatial-model')
+spatial_model = NormGauss2DInt('spatial-model')
+spatial_model.set_wcs(on.wcs)
 #spectral_model = PowLaw1D('spectral-model')
 spectral_model = MyPLExpCutoff('spectral-model')
 source_model = CombinedModel3D(spatial_model=spatial_model, spectral_model=spectral_model)
@@ -157,8 +160,8 @@ else:
 source_model.gamma = 2.2
 source_model.xpos = center.l.value
 source_model.ypos = center.b.value
-source_model.xpos.freeze()
-source_model.ypos.freeze()
+#source_model.xpos.freeze()
+#source_model.ypos.freeze()
 source_model.fwhm = 0.12
 #source_model.fwhm = 0.15
 #source_model.fwhm = 0.13
