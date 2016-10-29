@@ -27,7 +27,8 @@ if freeze_bkg:
     name+="_bkg_fix"
 else:
     name+="_bkg_free"
-    
+for_integral_flux=input_param["exposure"]["for_integral_flux"]
+
 fwhm_frozen=input_param["param_fit"]["gauss_configuration"]["fwhm_frozen"]
 name+="_fwhm_gauss"+str(fwhm_frozen)
 if fwhm_frozen:
@@ -40,8 +41,8 @@ energy_centers=energy_bins.log_centers
 
 #outdir result and plot
 config_name = input_param["general"]["config_name"]
-outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size)
-outdir_plot = make_outdir_plot(source_name, name_method_fond, len(energy_bins),config_name,image_size)
+outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux)
+outdir_plot = make_outdir_plot(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux)
 
 #store the fit result for the model of the source
 filename_table_result=outdir_result+"/flux_fit_result"+name+".txt"

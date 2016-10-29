@@ -40,15 +40,15 @@ if freeze_bkg:
     name+="_bkg_fix"
 else:
     name+="_bkg_free"
-    
+for_integral_flux=input_param["exposure"]["for_integral_flux"]
 #Energy binning
 energy_bins = EnergyBounds.equal_log_spacing(input_param["energy binning"]["Emin"], input_param["energy binning"]["Emax"], input_param["energy binning"]["nbin"], 'TeV')
 energy_centers=energy_bins.log_centers
 
 #outdir data and result
 config_name = input_param["general"]["config_name"]
-outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name,image_size)
-outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size)
+outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux)
+outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux)
 
 #Pour pouvoir definir la gaussienne centre sur la source au centre des cartes en general
 E1 = energy_bins[0].value
