@@ -34,6 +34,8 @@ from gammapy.data import DataStore
 from gammapy.spectrum import LogEnergyAxis
 from gammapy.cube import SkyCube, StackedObsCubeMaker
 from gammapy.irf import TablePSF
+from gammapy.utils.fits import energy_axis_to_ebounds
+from  gammapy.utils.nddata import BinnedDataAxis
 import os
 import logging
 
@@ -209,10 +211,7 @@ def make_images(image_size, energy_band, offset_band, center, data_store, obs_ta
     if 'COMMENT' in mosaicimages.images["exclusion"].meta:
         del mosaicimages.images["exclusion"].meta['COMMENT']
     write_mosaic_images(mosaicimages, filename)
-    if save_bkg_norm:
-        filename_bkg_norm = outdir + '/table_bkg_norm_' + str(energy_band[0].value) + '_' + str(energy_band[1].value) + '_TeV.fits'
-        mosaicimages.table_bkg_scale.write(filename_bkg_norm)
-
+    return mosaicimages
 
 def make_images_several_energyband(image_size,energy_bins, offset_band, source_name, center, data_store, obs_table_subset,
                                    exclusion_mask, outdir, make_background_image=True, spectral_index=2.3,
@@ -238,12 +237,30 @@ def make_images_several_energyband(image_size,energy_bins, offset_band, source_n
     Returns
     -------
     """
+    list_mosaicimages=list()
     for i, E in enumerate(energy_bins[0:-1]):
         energy_band = Energy([energy_bins[i].value, energy_bins[i + 1].value], energy_bins.unit)
         print energy_band
-        make_images(image_size,energy_band, offset_band, center, data_store, obs_table_subset, exclusion_mask, outdir,
+        mosaicimages=make_images(image_size,energy_band, offset_band, center, data_store, obs_table_subset, exclusion_mask, outdir,
                     make_background_image, spectral_index, for_integral_flux, radius,save_bkg_norm)
-
+        list_mosaicimages.append(mosaicimages)
+    if save_bkg_norm:
+        table=Table()
+        for i,mosaic_images in enumerate(list_mosaicimages):
+            table_bkg=mosaic_images.table_bkg_scale
+            if i==0:
+                array=np.zeros((len(table_bkg),len(energy_bins[0:-1])))
+            for irun,run in enumerate(table_bkg):
+                array[irun,i]=table_bkg["bkg_scale"][irun]
+        c0 = fits.Column(name="OBS_ID", format='E', array=table_bkg["OBS_ID"].data)
+        c1 = fits.Column(name="bkg_norm", format='PE()', array=array)
+        hdu = fits.BinTableHDU.from_columns([c0, c1])
+        ebounds = energy_axis_to_ebounds(BinnedDataAxis(energy_bins))
+        prim_hdu = fits.PrimaryHDU()
+        hdu_list=fits.HDUList([prim_hdu, hdu, ebounds])
+        hdu_list.writeto(outdir + "/table_bkg_norm_.fits") 
+                
+            
 
 def make_empty_cube(image_size, energy,center, data_unit=None):
     """
