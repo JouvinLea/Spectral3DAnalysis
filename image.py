@@ -94,8 +94,7 @@ if __name__ == '__main__':
     obslist = [data_store.obs(id) for id in obs_table_subset["OBS_ID"]]
     ObsList = ObservationList(obslist)
     if use_cube:
-        make_psf_several_energyband(energy_true_bins, source_name, center, ObsList, outdir,
-                                spectral_index=2.3)
+        make_psf_cube(image_size,energy_true, source_name, center, center, ObsList, outdir,spectral_index=2.3)
         make_mean_rmf(energy_true_bins.log_centers,energy_reco_bins.log_centers,center,ObsList, outdir)
     else:
         make_psf_several_energyband(energy_reco_bins, source_name, center, ObsList, outdir,

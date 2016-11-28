@@ -380,15 +380,19 @@ def make_psf_several_energyband(energy_bins, source_name, center, ObsList, outdi
         print energy_band
         make_psf(energy_band, source_name, center, ObsList, outdir, spectral_index)
 
-def make_psf_cube(image_size,energy_bins, source_name, center, ObsList, outdir,
+def make_psf_cube(image_size,energy_cube, source_name, center_maps, center, ObsList, outdir,
                                 spectral_index=2.3):
     """
     Compute the mean psf for a set of observation for different energy bands
     Parameters
     ----------
-    energy_band: energy band on which you want to compute the map
+    image_size:int, Total number of pixel of the 2D map
+    energy: Tuple for the energy axis: (Emin,Emax,nbins)
     source_name: name of the source you want to compute the image
-    center: SkyCoord of the source
+    center_maps: SkyCoord
+            center of the images
+    center: SkyCoord 
+            position where we want to compute the psf
     ObsList: ObservationList to use to compute the psf (could be different that the data_store for G0p9 for the GC for example)
     outdir: directory where the fits image will go
     spectral_index: assumed spectral index to compute the psf
@@ -397,16 +401,22 @@ def make_psf_cube(image_size,energy_bins, source_name, center, ObsList, outdir,
     -------
 
     """
-    image = SkyImage.empty(nxpix=image_size, nypix=image_size, binsz=0.02, xref=center.galactic.l.deg,
-                           yref=center.galactic.b.deg, proj='TAN', coordsys='GAL')
-    cube_image=np.zeros((len(energy_bins)-1,image_size,image_size))
-    log_energy_axis=LogEnergyAxis(energy_bins,mode='edges')
-    ref_cube_image=SkyCube(name="ref_image",data=Quantity(cube_image,""),wcs=image.wcs,energy_axis=log_energy_axis)
-    for i, E in enumerate(energy_bins[0:-1]):
-        energy_band = Energy([energy_bins[i].value, energy_bins[i + 1].value], energy_bins.unit)
-        print energy_band
-        make_psf(energy_band, source_name, center, ObsList, outdir, spectral_index)
+    ref_cube=make_empty_cube(image_size, energy_cube,center_maps)
+    header = ref_cube.sky_image_ref.to_image_hdu().header
+    energy_bins=ref_cube.energy_axis.energy
+    for i_E, E in enumerate(energy_bins[0:-1]):
+        energy_band = Energy([energy_bins[i_E].value, energy_bins[i_E + 1].value], energy_bins.unit)
+        energy = EnergyBounds.equal_log_spacing(energy_band[0].value, energy_band[1].value, 100, energy_band.unit)
+        # Here all the observations have a center at less than 2 degrees from the Crab so it will be ok to estimate the mean psf on the Crab source postion (the area is define for offset equal to 2 degrees...)
+        psf_energydependent = ObsList.make_psf(center, energy, theta=None)
+        try:
+            psf_table = psf_energydependent.table_psf_in_energy_band(energy_band, spectral_index=spectral_index)
+        except:
+            psf_table=TablePSF(psf_energydependent.offset, Quantity(np.zeros(len(psf_energydependent.offset)),u.sr**-1))
+        ref_cube.data[i_E,:,:] = fill_acceptance_image(header, center_maps, psf_table._offset ,psf_table._dp_domega, psf_table._offset[-1]).data
+    ref_cube.write(outdir+"/mean_psf_cube_"+source_name+".fits", format="fermi-counts")
         
+
 def make_mean_rmf(energy_true, energy_reco, center, ObsList, outdir):
     """
     Compute the mean psf for a set of observation and a given energy band
