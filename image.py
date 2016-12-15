@@ -60,7 +60,12 @@ if __name__ == '__main__':
     # Make the directory where the data are located and create a new hdutable with the link to the acceptance curve to build the bkg images
     obsdir = make_obsdir(source_name, name_bkg,config_name)
     if input_param["general"]["make_data_outdir"]:
-        if input_param["general"]["use_list_obs"]:
+        if input_param["general"]["use_list_obs_file"]:
+            file_obs=np.loadtxt(input_param["general"]["obs_file"])
+            list_obs=[obs for obs in file_obs]
+            make_new_directorydataset_listobs(nobs, config_directory+"/"+config_name, source_name, center, obsdir, list_obs)
+            add_bkgmodel_to_indextable(bkg_model_directory, source_name, obsdir)
+        elif input_param["general"]["use_list_obs"]:
             make_new_directorydataset_listobs(nobs, config_directory+"/"+config_name, source_name, center, obsdir, input_param["general"]["list_obs"])
             add_bkgmodel_to_indextable(bkg_model_directory, source_name, obsdir)
         else:
@@ -82,6 +87,7 @@ if __name__ == '__main__':
         i_remove = np.where(obs_table_subset["OBS_ID"] == 18373)
         if len(i_remove[0]) != 0:
             obs_table_subset.remove_row(i_remove[0][0])
+    
     if use_cube:
         energy_reco=[Energy(input_param["energy binning"]["Emin"],"TeV"),Energy(input_param["energy binning"]["Emax"],"TeV"), input_param["energy binning"]["nbin"]]
         energy_true=[Energy(input_param["energy true binning"]["Emin"],"TeV"),Energy(input_param["energy true binning"]["Emax"],"TeV"), input_param["energy true binning"]["nbin"]]
@@ -91,11 +97,12 @@ if __name__ == '__main__':
         make_images_several_energyband(image_size,energy_reco_bins, offset_band, source_name, center, data_store, obs_table_subset,
                                    exclusion_mask, outdir, make_background_image=True, spectral_index=2.3,
                                    for_integral_flux=for_integral_flux, radius=10.,save_bkg_norm=True)
+    
     obslist = [data_store.obs(id) for id in obs_table_subset["OBS_ID"]]
     ObsList = ObservationList(obslist)
     if use_cube:
         make_psf_cube(image_size,energy_true, source_name, center, center, ObsList, outdir,spectral_index=2.3)
-        make_mean_rmf(energy_true_bins.log_centers,energy_reco_bins.log_centers,center,ObsList, outdir)
+        make_mean_rmf(energy_true_bins,energy_reco_bins,center,ObsList, outdir)
     else:
         make_psf_several_energyband(energy_reco_bins, source_name, center, ObsList, outdir,
                                 spectral_index=2.3)

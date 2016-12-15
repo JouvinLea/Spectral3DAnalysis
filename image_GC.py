@@ -22,7 +22,7 @@ from gammapy.data import ObservationTable
 import matplotlib.pyplot as plt
 from gammapy.utils.scripts import make_path
 from gammapy.extern.pathlib import Path
-from gammapy.scripts import MosaicImage
+from gammapy.scripts import StackedObsImageMaker
 from gammapy.data import ObservationList
 import shutil
 import time
@@ -54,32 +54,54 @@ if __name__ == '__main__':
     bkg_model_directory = input_param["general"]["bkg_model_directory"]
     name_bkg = input_param["general"]["name_method_fond"]
     nobs = input_param["general"]["nobs"]
+    image_size= input_param["general"]["image_size"]
+    for_integral_flux=input_param["exposure"]["for_integral_flux"]
+    use_cube=input_param["general"]["use_cube"]
 
     # Make the directory where the data are located and create a new hdutable with the link to the acceptance curve to build the bkg images
     obsdir = make_obsdir(source_name, name_bkg, config_name)
     if input_param["general"]["make_data_outdir"]:
-        if input_param["general"]["use_list_obs"]:
+        if input_param["general"]["use_list_obs_file"]:
+            file_obs=np.loadtxt(input_param["general"]["obs_file"])
+            list_obs=[obs for obs in file_obs]
+            make_new_directorydataset_listobs(nobs, config_directory+"/"+config_name, source_name, center, obsdir, list_obs)
+            add_bkgmodel_to_indextable(bkg_model_directory, source_name, obsdir)
+        elif input_param["general"]["use_list_obs"]:
             make_new_directorydataset_listobs(nobs, config_directory+"/"+config_name, source_name, center, obsdir, input_param["general"]["list_obs"])
+            add_bkgmodel_to_indextable(bkg_model_directory, source_name, obsdir)
         else:
             make_new_directorydataset(nobs, config_directory+"/"+config_name, source_name, center, obsdir)
             add_bkgmodel_to_indextable(bkg_model_directory, source_name, obsdir)
 
     # Make the images and psf model for different energy bands
     #Energy binning
-    energy_bins = EnergyBounds.equal_log_spacing(input_param["energy binning"]["Emin"], input_param["energy binning"]["Emax"], input_param["energy binning"]["nbin"], 'TeV')
+    energy_reco_bins = EnergyBounds.equal_log_spacing(input_param["energy binning"]["Emin"], input_param["energy binning"]["Emax"], input_param["energy binning"]["nbin"], 'TeV')
+    energy_true_bins = EnergyBounds.equal_log_spacing(input_param["energy true binning"]["Emin"], input_param["energy true binning"]["Emax"], input_param["energy true binning"]["nbin"], 'TeV')
 
-    outdir = make_outdir(source_name, name_bkg, len(energy_bins),config_name)
+    outdir = make_outdir(source_name, name_bkg, len(energy_reco_bins),config_name, image_size,for_integral_flux,use_cube)
     offset_band = Angle([0, 2.49], 'deg')
     data_store = DataStore.from_dir(obsdir)
     exclusion_mask = SkyMask.read(input_param["general"]["exclusion_mask"])
     obs_table_subset = data_store.obs_table[0:nobs]
-    make_images_several_energyband(energy_bins, offset_band, source_name, center, data_store, obs_table_subset,
+    if use_cube:
+        energy_reco=[Energy(input_param["energy binning"]["Emin"],"TeV"),Energy(input_param["energy binning"]["Emax"],"TeV"), input_param["energy binning"]["nbin"]]
+        energy_true=[Energy(input_param["energy true binning"]["Emin"],"TeV"),Energy(input_param["energy true binning"]["Emax"],"TeV"), input_param["energy true binning"]["nbin"]]
+        make_cube(image_size, energy_reco, energy_true, offset_band, center, data_store, obs_table_subset, exclusion_mask, outdir,
+                  make_background_image=True, radius=10.,save_bkg_norm=True)
+    else:
+        make_images_several_energyband(image_size,energy_reco_bins, offset_band, source_name, center, data_store, obs_table_subset,
                                    exclusion_mask, outdir, make_background_image=True, spectral_index=2.3,
-                                 for_integral_flux=False, radius=10.)
+                                   for_integral_flux=for_integral_flux, radius=10.,save_bkg_norm=True)
     obslist = [data_store.obs(id) for id in obs_table_subset["OBS_ID"]]
     ObsList = ObservationList(obslist)
-    make_psf_several_energyband(energy_bins, source_name, center, ObsList, outdir,
+    if use_cube:
+        make_psf_cube(image_size,energy_true, source_name, center, center, ObsList, outdir,spectral_index=2.3)
+        make_mean_rmf(energy_true_bins,energy_reco_bins,center,ObsList, outdir)
+    else:
+        make_psf_several_energyband(energy_reco_bins, source_name, center, ObsList, outdir,
                                 spectral_index=2.3)
+        
+
     #Make psf for the source G0p9
     if "l_gal" in input_param["param_G0p9"]["sourde_name_skycoord"]:
         center2 = SkyCoord(input_param["param_G0p9"]["sourde_name_skycoord"]["l_gal"], input_param["param_G0p9"]["sourde_name_skycoord"]["b_gal"], unit='deg', frame="galactic")
@@ -92,7 +114,13 @@ if __name__ == '__main__':
     obslist2=[data_store.obs(id) for id in obs_table_subset["OBS_ID"][i]]
     ObsList2= ObservationList(obslist2)
 
-    make_psf_several_energyband(energy_bins, source_name2, center2, ObsList2, outdir,
+    if use_cube:
+        make_psf_cube(image_size,energy_true, source_name2, center, center2, ObsList2, outdir,spectral_index=2.3)
+        make_mean_rmf(energy_true_bins,energy_reco_bins,center2,ObsList2, outdir)
+    else:
+        make_psf_several_energyband(energy_reco_bins, source_name2, center2, ObsList2, outdir,
                                 spectral_index=2.3)
+        
+
 
 

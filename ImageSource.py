@@ -135,7 +135,6 @@ def make_new_directorydataset_listobs(nobs, config_directory, source_name, cente
     center: SkyCoord of the source
     obsdir: directory where you want to put these data
     list_obs: list of obs id we want to create the new data_store
-
     Returns
     -------
 
@@ -209,7 +208,7 @@ def make_images(image_size, energy_band, offset_band, center, data_store, obs_ta
                              for_integral_flux=for_integral_flux, radius=radius)
     filename = outdir + '/fov_bg_maps' + str(energy_band[0].value) + '_' + str(energy_band[1].value) + '_TeV.fits'
     if 'COMMENT' in mosaicimages.images["exclusion"].meta:
-        del mosaicimages.images["exclusion"].meta['COMMENT']
+        del mosaicimages.images["exclusion"].meta['COMMENT']   
     write_mosaic_images(mosaicimages, filename)
     return mosaicimages
 
@@ -249,12 +248,19 @@ def make_images_several_energyband(image_size,energy_bins, offset_band, source_n
         for i,mosaic_images in enumerate(list_mosaicimages):
             table_bkg=mosaic_images.table_bkg_scale
             if i==0:
-                array=np.zeros((len(table_bkg),len(energy_bins[0:-1])))
-            for irun,run in enumerate(table_bkg):
-                array[irun,i]=table_bkg["bkg_scale"][irun]
+                array_bkg_scale=np.zeros((len(obs_table_subset),len(energy_bins[0:-1])))
+                array_counts=np.zeros((len(obs_table_subset),len(energy_bins[0:-1])))
+            itot=0    
+            for irun,run in enumerate(table_bkg["OBS_ID"]):
+                while run!=obs_table_subset["OBS_ID"][itot]:
+                    itot+=1
+                array_bkg_scale[itot,i]=table_bkg["bkg_scale"][irun]
+                array_counts[itot,i]=table_bkg["N_counts"][irun]
+                itot+=1
         c0 = fits.Column(name="OBS_ID", format='E', array=table_bkg["OBS_ID"].data)
-        c1 = fits.Column(name="bkg_norm", format='PE()', array=array)
-        hdu = fits.BinTableHDU.from_columns([c0, c1])
+        c1 = fits.Column(name="bkg_norm", format='PE()', array=array_bkg_scale)
+        c2 = fits.Column(name="counts", format='PE()', array=array_counts)
+        hdu = fits.BinTableHDU.from_columns([c0, c1,c2])
         ebounds = energy_axis_to_ebounds(BinnedDataAxis(energy_bins))
         prim_hdu = fits.PrimaryHDU()
         hdu_list=fits.HDUList([prim_hdu, hdu, ebounds])
@@ -336,7 +342,7 @@ def make_cube(image_size, energy_reco, energy_true, offset_band, center, data_st
     mosaic_cubes.exposure_cube.write(filename_exposure,format="fermi-counts")
     if save_bkg_norm:
         filename_bkg_norm = outdir + '/table_bkg_norm_.fits'
-        mosaic_cubes.table_bkg_scale.write(filename_bkg_norm)
+        mosaic_cubes.table_bkg_scale.write(filename_bkg_norm,overwrite=True)
 
 
 
@@ -420,7 +426,7 @@ def make_psf_cube(image_size,energy_cube, source_name, center_maps, center, ObsL
     """
     ref_cube=make_empty_cube(image_size, energy_cube,center_maps)
     header = ref_cube.sky_image_ref.to_image_hdu().header
-    energy_bins=ref_cube.energy_axis.energy
+    energy_bins=ref_cube.energies()
     for i_E, E in enumerate(energy_bins[0:-1]):
         energy_band = Energy([energy_bins[i_E].value, energy_bins[i_E + 1].value], energy_bins.unit)
         energy = EnergyBounds.equal_log_spacing(energy_band[0].value, energy_band[1].value, 100, energy_band.unit)
@@ -429,8 +435,8 @@ def make_psf_cube(image_size,energy_cube, source_name, center_maps, center, ObsL
         try:
             psf_table = psf_energydependent.table_psf_in_energy_band(energy_band, spectral_index=spectral_index)
         except:
-            psf_table=TablePSF(psf_energydependent.offset, Quantity(np.zeros(len(psf_energydependent.offset)),u.sr**-1))
-        ref_cube.data[i_E,:,:] = fill_acceptance_image(header, center_maps, psf_table._offset ,psf_table._dp_domega, psf_table._offset[-1]).data
+            psf_table=TablePSF(psf_energydependent.offset, Quantity(np.zeros(len(psf_energydependent.offset)),u.sr**-1))    
+        ref_cube.data[i_E,:,:] = fill_acceptance_image(header, center_maps, psf_table._offset.to("deg") ,psf_table._dp_domega, psf_table._offset.to("deg")[-1]).data 
     ref_cube.write(outdir+"/mean_psf_cube_"+source_name+".fits", format="fermi-counts")
         
 
