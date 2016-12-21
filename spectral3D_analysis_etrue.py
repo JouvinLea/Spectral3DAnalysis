@@ -27,7 +27,7 @@ from sherpa.stats import Cash, Chi2ConstVar
 from sherpa.optmethods import LevMar, NelderMead
 from sherpa.estmethods import Confidence, Covariance
 from sherpa.fit import Fit
-from gammapy.cube.sherpa_ import Data3D, CombinedModel3D, CombinedModel3DInt
+from gammapy.cube.sherpa_ import Data3D, CombinedModel3D, CombinedModel3DInt, CombinedModel3DIntConvolveEdisp
 from NormGauss2d import NormGauss2DInt
 from gammapy.spectrum.utils import LogEnergyAxis
 from gammapy.irf import EnergyDispersion
@@ -58,9 +58,6 @@ use_cube=input_param["general"]["use_cube"]
 
 #Energy binning
 energy_bins = EnergyBounds.equal_log_spacing(input_param["energy binning"]["Emin"], input_param["energy binning"]["Emax"], input_param["energy binning"]["nbin"], 'TeV')
-energy_centers=energy_bins.log_centers
-energy_true_bins = EnergyBounds.equal_log_spacing(input_param["energy true binning"]["Emin"], input_param["energy true binning"]["Emax"], input_param["energy true binning"]["nbin"], 'TeV')
-energy_centers_true=energy_bins.log_centers
 
 #outdir data and result
 config_name = input_param["general"]["config_name"]
@@ -68,84 +65,28 @@ outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),c
 outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux,use_cube)
 
 
-if "dec" in input_param["general"]["sourde_name_skycoord"]:
-        source_center = SkyCoord(input_param["general"]["sourde_name_skycoord"]["ra"], input_param["general"]["sourde_name_skycoord"]["dec"], unit="deg")
-else:
-        source_center = SkyCoord.from_name(input_param["general"]["sourde_name_skycoord"])  
 """
 Source model paramaters initial
 """
 #Dans HGPS, c est une gaussienne de 0.05deg en sigma donc *2.35 pour fwhm
 #avec HESS meme une source pontuelle ne fera jamais en dessous de 0.03-0.05 degre,
 counts_3D=SkyCube.read(outdir_data+"/counts_cube.fits")
+cube=counts_3D.to_sherpa_data3d(dstype='Data3DInt')
 bkg_3D=SkyCube.read(outdir_data+"/bkg_cube.fits")
 exposure_3D=SkyCube.read(outdir_data+"/exposure_cube.fits")
+i_nan=np.where(np.isnan(exposure_3D.data))
+exposure_3D.data[i_nan]=0
+exposure_3D.data=exposure_3D.data*1e4
 psf_3D=SkyCube.read(outdir_data+"/mean_psf_cube_"+source_name+".fits", format="fermi-counts")
 rmf=EnergyDispersion.read(outdir_data+"/mean_rmf.fits")
 
-wcs=counts_3D.sky_image_ref.wcs
-omega=counts_3D.sky_image_ref.solid_angle().to("deg2").value
-center_maps=counts_3D.sky_image_ref.center
-
-    
-fwhm_init=None
-ampl_init=None
-xpos_init,ypos_init=skycoord_to_pixel(source_center, wcs)
-fwhm_frozen=False
-ampl_frozen=False
-xpos_frozen=input_param["param_fit"]["gauss_configuration"]["xpos_frozen"]
-ypos_frozen=input_param["param_fit"]["gauss_configuration"]["ypos_frozen"]
-source_model=source_punctual_model(source_name, fwhm_init,fwhm_frozen, ampl_init, ampl_frozen, xpos_init, xpos_frozen, ypos_init, ypos_frozen)
-imax=-2
-#imax=12
-
-
- 
-from astropy import wcs
-from astropy.io import fits
-from astropy.table import Table
-from gammapy.utils.fits import table_to_fits_table
-w = wcs.WCS(naxis=2)
-w.wcs.crpix = [125.5, 125.5]
-w.wcs.cdelt = np.array([-0.02, 0.02])
-w.wcs.cunit = np.array(['deg', 'deg'])
-w.wcs.crval = [83.633333333, 22.014444444]
-w.wcs.ctype = ["RA---CAR", "DEC--CAR"]
-#w.wcs.set_pv([(2, 1, 45.0)])
-
-
-
-
-#counts_3D=SkyCube(name="counts3D",data=Quantity(counts," "),wcs=w,energy=energy_bins[0:imax+1])
-#counts_3D=SkyCube(name="counts3D",data=Quantity(counts," "),wcs=wcs,energy=energy_bins[0:imax+1])
-#counts_3D=SkyCube(name="counts3D",data=Quantity(counts," "),wcs=wcs,energy=energy_bins[0:imax+1])
-#logenergy_axis=LogEnergyAxis(energy_bins[0:imax+1],mode='edges')
-#counts_3D=SkyCube(name="counts3D",data=Quantity(counts," "),wcs=wcs,energy_axis=logenergy_axis)
-logenergy_true_axis=LogEnergyAxis(energy_true_bins,mode='edges')
-cube=counts_3D.to_sherpa_data3d(dstype='Data3DInt', use_true_energy=True,  energy_true_axis=logenergy_true_axis)
-#cube=counts_3D.to_sherpa_data3d()
-exposure = TableModel('exposure')
-exposure.load(None, exposure_3D.data.ravel()*1e4)
-# Freeze exposure amplitude
-exposure.ampl.freeze()
-bkg = TableModel('bkg')
-bkg.load(None, bkg_3D.data.ravel())
-# Freeze bkg amplitude
-bkg.ampl=1
-bkg.ampl.freeze()
-
-psf = TableModel('psf')
-psf.load(None, psf_3D.data.ravel())
-
-
 # Setup combined spatial and spectral model
-#spatial_model = NormGauss2D('spatial-model')
 spatial_model = NormGauss2DInt('spatial-model')
-#spatial_model.set_wcs(wcs)
 spectral_model = PowLaw1D('spectral-model')
 #spectral_model = MyPLExpCutoff('spectral-model')
-source_model = CombinedModel3DInt(use_psf=True,exposure=exposure_3D,psf=psf_3D.data,spatial_model=spatial_model, spectral_model=spectral_model, edisp=rmf.data)
-#source_model = CombinedModel3D(use_psf=False,spatial_model=spatial_model, spectral_model=spectral_model)
+dimensions=[exposure_3D.data.shape[1],exposure_3D.data.shape[2],rmf.data.shape[1],exposure_3D.data.shape[0]]
+source_model = CombinedModel3DIntConvolveEdisp(dimensions=dimensions,use_psf=True,exposure=exposure_3D,psf=psf_3D,spatial_model=spatial_model, spectral_model=spectral_model, edisp=rmf.data)
+
 
 # Set starting values
 if "dec" in input_param["general"]["sourde_name_skycoord"]:
@@ -166,7 +107,11 @@ source_model.ampl=1.0
 #spectral_model_bkg = PowLaw1D('spectral-model-bkg')
 #bkg_model = CombinedModel3D(spatial_model=spatial_model_bkg, spectral_model=spectral_model_bkg)
 
-
+bkg = TableModel('bkg')
+bkg.load(None, bkg_3D.data.value.ravel())
+# Freeze bkg amplitude
+bkg.ampl=1
+bkg.ampl.freeze()
 model = bkg+1E-11 * (source_model)
 
 # Fit
@@ -177,3 +122,35 @@ result = fit.fit()
 err=fit.est_errors()
 print(err)
 
+
+def PWL(E,phi_0,gamma):
+    return phi_0*E**gamma
+def EXP(E,phi_0,gamma,beta):
+    return phi_0*E**gamma*np.exp(-beta*E)
+coord=exposure_3D.sky_image_ref.coordinates(mode="edges")
+d = coord.separation(center)
+pix_size=exposure_3D.wcs.to_header()["CDELT2"]
+i=np.where(d<pix_size*u.deg)
+#i permet de faire la moyenne exposure autour de pixel autour de la source
+mean_exposure=list()
+for ie in range(len(exposure_3D.energies())):
+    mean_exposure.append(exposure_3D.data[ie,i[0],i[1]].value.mean()*1e4)
+etrue=EnergyBounds(exposure_3D.energies("edges")).log_centers
+etrue_band=EnergyBounds(exposure_3D.energies("edges")).bands
+dic_result_fit=dict()
+if "spectral-model.beta" in err.parnames:
+    for name,val in zip(err.parnames,err.parvals):
+        dic_result_fit[name]=val
+    spectre=EXP(etrue.value,dic_result_fit["spatial-model.ampl"]*1e-11,dic_result_fit["spectral-model.gamma"],dic_result_fit["spectral-model.beta"])
+else:   
+    for name,val in zip(err.parnames,err.parvals):
+        dic_result_fit[name]=val
+    spectre=PWL(etrue.value,dic_result_fit["spatial-model.ampl"]*1e-11,dic_result_fit["spectral-model.gamma"])
+covolve_edisp=np.zeros((rmf.data.shape[1],exposure_3D.data.shape[0]))
+for ireco in range(rmf.data.shape[1]):
+    covolve_edisp[ireco,:]=spectre*np.asarray(mean_exposure)*rmf.data[:,ireco]*etrue_band
+npred=np.sum(covolve_edisp,axis=1)
+    
+
+nobs=np.sum(counts_3D.data-bkg_3D.data,axis=(1,2))
+    
