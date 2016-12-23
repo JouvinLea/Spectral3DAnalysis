@@ -32,6 +32,7 @@ Estimation du flux du source model a partir de la psf et de l exposure: on=bkg+p
 """
 
 input_param = yaml.load(open(sys.argv[1]))
+image_size= input_param["general"]["image_size"]
 # Input param fit and source configuration
 # Sur quelle taille de la carte on fait le fit
 freeze_bkg = input_param["param_fit_morpho"]["freeze_bkg"]
@@ -41,6 +42,7 @@ if freeze_bkg:
     name = "_bkg_fix"
 else:
     name = "_bkg_free"
+for_integral_flux=input_param["exposure"]["for_integral_flux"]
 # Energy binning
 energy_bins = EnergyBounds.equal_log_spacing(input_param["energy binning"]["Emin"],
                                              input_param["energy binning"]["Emax"],
@@ -49,10 +51,10 @@ energy_centers = energy_bins.log_centers
 
 # outdir data and result
 config_name = input_param["general"]["config_name"]
-outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name)
-outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name)
-outdir_plot = make_outdir_plot(source_name, name_method_fond, len(energy_bins),config_name)
-outdir_profiles = make_outdir_profile(source_name, name_method_fond, len(energy_bins),config_name)
+outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux)
+outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux)
+outdir_plot = make_outdir_plot(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux)
+outdir_profiles = make_outdir_profile(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux)
 
 # Pour pouvoir definir la gaussienne centre sur la source au centre des cartes en general
 E1 = energy_bins[0].value
@@ -92,7 +94,7 @@ residus_l=list()
 residus_err_l=list()
 residus_b=list()
 residus_err_b=list()
-for i_E, E in enumerate(energy_bins[0:-3]):
+for i_E, E in enumerate(energy_bins[0:-1]):
 #for i_E, E in enumerate(energy_bins[0:-1]):
     E1 = energy_bins[i_E].value
     E2 = energy_bins[i_E + 1].value

@@ -30,9 +30,9 @@ from sherpa.fit import Fit
 from gammapy.cube.sherpa_ import Data3D, CombinedModel3D, CombinedModel3DInt
 from NormGauss2d import NormGauss2DInt
 from gammapy.spectrum.utils import LogEnergyAxis
+from gammapy.irf import EnergyDispersion
 import yaml
 import sys
-import time
 pt.ion()
 
 """
@@ -40,7 +40,7 @@ pt.ion()
 Estimation de la morphologie de la source (notamment de la fwhm de la gaussienne qui modelise la source ponctuelle)
  a partir de la psf et de l exposure: on=bkg+psf(model*exposure)
 """
-debut = time.time()
+
 input_param=yaml.load(open(sys.argv[1]))
 #Input param fit and source configuration
 image_size= input_param["general"]["image_size"]
@@ -54,60 +54,38 @@ if freeze_bkg:
 else:
     name+="_bkg_free"
 for_integral_flux=input_param["exposure"]["for_integral_flux"]    
-    
+use_cube=input_param["general"]["use_cube"]
+use_etrue=input_param["general"]["use_etrue"]
+if use_etrue:
+    print "With this script normally use_etrue=False and you put it at True..."
 #Energy binning
 energy_bins = EnergyBounds.equal_log_spacing(input_param["energy binning"]["Emin"], input_param["energy binning"]["Emax"], input_param["energy binning"]["nbin"], 'TeV')
-energy_centers=energy_bins.log_centers
 
 #outdir data and result
 config_name = input_param["general"]["config_name"]
-outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux)
-outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux)
+outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux, use_cube,use_etrue=False)
+outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux,use_cube,use_etrue=False)
 
-#Pour pouvoir definir la gaussienne centre sur la source au centre des cartes en general
-E1 = energy_bins[0].value
-E2 = energy_bins[1].value
-on = SkyImageList.read(outdir_data+"/fov_bg_maps"+str(E1)+"_"+str(E2)+"_TeV.fits")["counts"]
 
 """
 Source model paramaters initial
 """
 #Dans HGPS, c est une gaussienne de 0.05deg en sigma donc *2.35 pour fwhm
 #avec HESS meme une source pontuelle ne fera jamais en dessous de 0.03-0.05 degre,
-imax=-1
-#imax=12
-counts=np.zeros((len(energy_bins[0:imax]),on.data.shape[0],on.data.shape[1]))
-exposure_data=np.zeros((len(energy_bins[0:imax]),on.data.shape[0],on.data.shape[1]))
-bkg_data=np.zeros((len(energy_bins[0:imax]),on.data.shape[0],on.data.shape[1]))
-psf_data=np.zeros((len(energy_bins[0:imax]),on.data.shape[0],on.data.shape[1]))
-for i_E, E in enumerate(energy_bins[0:imax]):
-    E1 = energy_bins[i_E].value
-    E2 = energy_bins[i_E+1].value
-    
-    on = SkyImageList.read(outdir_data+"/fov_bg_maps"+str(E1)+"_"+str(E2)+"_TeV.fits")["counts"]
-    on.write(outdir_data+"/on_maps"+str(E1)+"_"+str(E2)+"_TeV.fits", clobber=True)
-    counts[i_E,:,:]=on.data
-    exposure_data[i_E,:,:] = SkyImageList.read(outdir_data + "/fov_bg_maps" + str(E1) + "_" + str(E2) + "_TeV.fits")["exposure"].data*1e4
-    #exposure_data[i_E,:,:] = SkyImageList.read(outdir_data + "/fov_bg_maps" + str(E1) + "_" + str(E2) + "_TeV.fits")["exposure"].data
-    bkg_data[i_E,:,:] = SkyImageList.read(outdir_data + "/fov_bg_maps" + str(E1) + "_" + str(E2) + "_TeV.fits")["bkg"].data
-    psf_file = Table.read(outdir_data + "/psf_table_" + source_name + "_" + str(E1) + "_" + str(E2) + ".fits")
-    header = on.to_image_hdu().header
-    psf_data[i_E,:,:] = fill_acceptance_image(header, on.center, psf_file["theta"].to("deg"),psf_file["psf_value"].data, psf_file["theta"].to("deg")[-1]).data
-
-
-
-#logenergy_axis=LogEnergyAxis(energy_bins[0:imax+1],mode='edges')
-logenergy_axis=LogEnergyAxis(energy_bins,mode='edges')
-counts_3D=SkyCube(name="counts3D",data=Quantity(counts," "),wcs=on.wcs,energy_axis=logenergy_axis)
+counts_3D=SkyCube.read(outdir_data+"/counts_cube.fits")
 cube=counts_3D.to_sherpa_data3d(dstype='Data3DInt')
-logenergy_axis=LogEnergyAxis(energy_bins[0:imax+1],mode='edges')
-psf_image_3D=SkyCube(name="counts3D",data=Quantity(psf_data," "),wcs=on.wcs,energy_axis=logenergy_axis)
-exposure_image_3D=SkyCube(name="counts3D",data=Quantity(exposure_data,"m2 s "),wcs=on.wcs,energy_axis=logenergy_axis)
+bkg_3D=SkyCube.read(outdir_data+"/bkg_cube.fits")
+exposure_3D=SkyCube.read(outdir_data+"/exposure_cube.fits")
+i_nan=np.where(np.isnan(exposure_3D.data))
+exposure_3D.data[i_nan]=0
+exposure_3D.data=exposure_3D.data*1e4
+psf_3D=SkyCube.read(outdir_data+"/mean_psf_cube_"+source_name+".fits", format="fermi-counts")
 
+# Setup combined spatial and spectral model
 spatial_model = NormGauss2DInt('spatial-model')
 spectral_model = PowLaw1D('spectral-model')
 #spectral_model = MyPLExpCutoff('spectral-model')
-source_model = CombinedModel3DInt(use_psf=True,exposure=exposure_image_3D,psf=psf_image_3D,spatial_model=spatial_model, spectral_model=spectral_model)
+source_model = CombinedModel3DInt(use_psf=True,exposure=exposure_3D,psf=psf_3D,spatial_model=spatial_model, spectral_model=spectral_model)
 
 
 # Set starting values
@@ -130,11 +108,10 @@ source_model.ampl=1.0
 #bkg_model = CombinedModel3D(spatial_model=spatial_model_bkg, spectral_model=spectral_model_bkg)
 
 bkg = TableModel('bkg')
-bkg.load(None, bkg_data.ravel())
+bkg.load(None, bkg_3D.data.value.ravel())
 # Freeze bkg amplitude
 bkg.ampl=1
 bkg.ampl.freeze()
-
 model = bkg+1E-11 * (source_model)
 
 # Fit
@@ -144,6 +121,5 @@ fit = Fit(data=cube, model=model, stat=Cash(), method=NelderMead(), estmethod=Co
 result = fit.fit()
 err=fit.est_errors()
 print(err)
-fin = time.time()
-print fin - debut
+
 

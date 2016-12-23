@@ -55,14 +55,16 @@ else:
     name+="_bkg_free"
 for_integral_flux=input_param["exposure"]["for_integral_flux"]    
 use_cube=input_param["general"]["use_cube"]
-
+use_etrue=input_param["general"]["use_etrue"]
+if not use_etrue:
+    print "With this script normally use_etrue=True and you put it at False..."
 #Energy binning
 energy_bins = EnergyBounds.equal_log_spacing(input_param["energy binning"]["Emin"], input_param["energy binning"]["Emax"], input_param["energy binning"]["nbin"], 'TeV')
 
 #outdir data and result
 config_name = input_param["general"]["config_name"]
-outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux, use_cube)
-outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux,use_cube)
+outdir_data = make_outdir_data(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux, use_cube,use_etrue)
+outdir_result = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,image_size,for_integral_flux,use_cube,use_etrue)
 
 
 """
@@ -82,8 +84,8 @@ rmf=EnergyDispersion.read(outdir_data+"/mean_rmf.fits")
 
 # Setup combined spatial and spectral model
 spatial_model = NormGauss2DInt('spatial-model')
-spectral_model = PowLaw1D('spectral-model')
-#spectral_model = MyPLExpCutoff('spectral-model')
+#spectral_model = PowLaw1D('spectral-model')
+spectral_model = MyPLExpCutoff('spectral-model')
 dimensions=[exposure_3D.data.shape[1],exposure_3D.data.shape[2],rmf.data.shape[1],exposure_3D.data.shape[0]]
 source_model = CombinedModel3DIntConvolveEdisp(dimensions=dimensions,use_psf=True,exposure=exposure_3D,psf=psf_3D,spatial_model=spatial_model, spectral_model=spectral_model, edisp=rmf.data)
 
@@ -122,11 +124,11 @@ result = fit.fit()
 err=fit.est_errors()
 print(err)
 
-
+"""
 def PWL(E,phi_0,gamma):
-    return phi_0*E**gamma
+    return phi_0*E**(-gamma)
 def EXP(E,phi_0,gamma,beta):
-    return phi_0*E**gamma*np.exp(-beta*E)
+    return phi_0*E**(-gamma)*np.exp(-beta*E)
 coord=exposure_3D.sky_image_ref.coordinates(mode="edges")
 d = coord.separation(center)
 pix_size=exposure_3D.wcs.to_header()["CDELT2"]
@@ -134,7 +136,7 @@ i=np.where(d<pix_size*u.deg)
 #i permet de faire la moyenne exposure autour de pixel autour de la source
 mean_exposure=list()
 for ie in range(len(exposure_3D.energies())):
-    mean_exposure.append(exposure_3D.data[ie,i[0],i[1]].value.mean()*1e4)
+    mean_exposure.append(exposure_3D.data[ie,i[0],i[1]].value.mean())
 etrue=EnergyBounds(exposure_3D.energies("edges")).log_centers
 etrue_band=EnergyBounds(exposure_3D.energies("edges")).bands
 dic_result_fit=dict()
@@ -150,7 +152,69 @@ covolve_edisp=np.zeros((rmf.data.shape[1],exposure_3D.data.shape[0]))
 for ireco in range(rmf.data.shape[1]):
     covolve_edisp[ireco,:]=spectre*np.asarray(mean_exposure)*rmf.data[:,ireco]*etrue_band
 npred=np.sum(covolve_edisp,axis=1)
+err_npred=np.sqrt(npred)    
+nobs=np.sum(counts_3D.data-bkg_3D.data,axis=(1,2))
+#err_nobs=np.sqrt(nobs)
+err_nobs=np.sqrt(np.sum(counts_3D.data,axis=(1,2)))
+residus=(nobs.value-npred)/npred
+
+
+#Excess from the 2D fit energy band by energy band
+#TODO: for the moment je met a la main  aller chercher les cartes en 2D avec 250pix car les cubes sont a 50....
+
+outdir_result_image = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,250,for_integral_flux)
+#store the fit result for the model of the source
+filename_table_result=outdir_result+"/morphology_fit_result"+name+".txt"
+filename_covar_result=outdir_result+"/morphology_fit_covar_result"+name+".txt"
+table_models= Table.read(filename_table_result, format="ascii")
+table_covar=Table.read(filename_covar_result, format="ascii")
+#imax: until which energy bin we want to plot
+imax=input_param["param_plot"]["imax"]
+E=table_models["energy"][0:imax]
+excess=table_models[source_name+".ampl"][0:imax]
+err_excess_min=table_covar[source_name+".ampl_min"][0:imax]
+err_excess_max=table_covar[source_name+".ampl_max"][0:imax]
+residus_2D=(excess-npred[0:imax])/npred[0:imax]
     
 
-nobs=np.sum(counts_3D.data-bkg_3D.data,axis=(1,2))
-    
+pt.figure(1)
+pt.subplot(2,1,1)
+pt.plot(energy_bins.log_centers, npred, label="npred")
+#pt.errorbar(energy_bins.log_centers.value, npred,yerr=err_npred, label="npred")
+pt.errorbar(energy_bins.log_centers.value, nobs.value,yerr=err_nobs.value, label="nobs=counts-bkg",linestyle='None', marker="*")
+pt.errorbar(E, excess, yerr=[err_excess_min, err_excess_max], linestyle="None", label="fit 2D")
+pt.ylabel("counts")
+pt.xscale("log")
+pt.subplot(2,1,2)
+pt.errorbar(energy_bins.log_centers.value, residus,yerr=err_nobs.value/npred,linestyle='None', marker="*", label="obs=counts-bkg")
+pt.errorbar(E, residus_2D,yerr=[err_excess_min/npred,, err_excess_max/npred,]linestyle='None', marker="*", label="fit 2D")
+pt.xlabel("Energy (TeV)")
+pt.ylabel("(nobs-npred)/npred")
+pt.xscale("log")
+pt.axhline(y=0, color='red',linewidth=2)
+pt.legend()
+#pt.savefig("npred_nobs_PA_"+source_name+".png")
+pt.savefig("npred_nobs_HAPFR_"+source_name+".png")
+pt.figure(2)
+pt.subplot(2,1,1)
+pt.plot(energy_bins.log_centers, npred, label="npred")
+#pt.errorbar(energy_bins.log_centers.value, npred,yerr=err_npred, label="npred")
+pt.errorbar(energy_bins.log_centers.value, nobs.value,yerr=err_nobs.value, label="nobs",linestyle='None', marker="*")
+pt.errorbar(E, excess, yerr=[err_excess_min, err_excess_max], linestyle="None", label="fit 2D")
+pt.ylabel("counts")
+pt.xscale("log")
+pt.yscale("log")
+pt.subplot(2,1,2)
+pt.errorbar(energy_bins.log_centers.value, residus,yerr=err_nobs.value/npred,linestyle='None', marker="*", label="obs=counts-bkg")
+pt.errorbar(E, residus_2D,yerr=[err_excess_min/npred,, err_excess_max/npred,]linestyle='None', marker="*", label="fit 2D")
+pt.xlabel("Energy (TeV)")
+pt.ylabel("(nobs-npred)/npred")
+pt.xscale("log")
+pt.legend()
+pt.axhline(y=0, color='red',linewidth=2)
+#pt.savefig("npred_nobs_PA_log_"+source_name+".png")
+pt.savefig("npred_nobs_HAPFR_log_"+source_name+".png")
+"""
+
+
+

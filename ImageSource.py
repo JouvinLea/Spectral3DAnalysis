@@ -49,13 +49,19 @@ Method to compute the images and psf of a given source
 """
 
 
-def make_outdir(source_name, name_bkg, n_binE,config_name,image_size,for_integral_flux, use_cube=False):
+def make_outdir(source_name, name_bkg, n_binE,config_name,image_size,for_integral_flux, use_cube=False, use_etrue=False):
     """
 
     Parameters
     ----------
     source_name: name of the source you want to compute the image
     name_bkg: name of the bkg model you use to produce your bkg image
+    n_binE: number of ereco bin
+    config_name: 
+    image_size:
+    for_integral_flux: True if you want to compute the exposure to get the integral flux
+    use_cube: True if you want to compute cube analisys
+    use_etrue: True if you want to compute the exposure cube and psf mean cube in true energy
 
     Returns
     -------
@@ -66,6 +72,8 @@ def make_outdir(source_name, name_bkg, n_binE,config_name,image_size,for_integra
         outdir+= "_exposure_flux_diff"
     if use_cube:
         outdir+= "_cube_images"
+        if use_etrue:
+            outdir+= "_use_etrue"
     try:
         shutil.rmtree(outdir)
     except Exception:
@@ -320,11 +328,15 @@ def make_cube(image_size, energy_reco, energy_true, offset_band, center, data_st
     #ref_cube_images=make_empty_cube(image_size, energy_reco,center, data_unit="ct")
     ref_cube_images=make_empty_cube(image_size, energy_reco,center)
     ref_cube_exposure=make_empty_cube(image_size, energy_true,center, data_unit="m2 s")
+    ref_cube_skymask=make_empty_cube(image_size, energy_reco,center)
     
     refheader = ref_cube_images.sky_image_ref.to_image_hdu().header
     exclusion_mask = exclusion_mask.reproject(reference=refheader)
-    mosaic_cubes = StackedObsCubeMaker(empty_cube_images=ref_cube_images, empty_exposure_cube=ref_cube_exposure, offset_band=offset_band, data_store=data_store, obs_table=obs_table_subset, exclusion_mask=exclusion_mask,save_bkg_scale=save_bkg_norm)
-    mosaic_cubes.make_images(make_background_image=make_background_image, radius=radius)
+    ref_cube_skymask.data=np.tile(exclusion_mask.data,(energy_reco[2], 1, 1))
+    
+    #mosaic_cubes = StackedObsCubeMaker(empty_cube_images=ref_cube_images, empty_exposure_cube=ref_cube_exposure, offset_band=offset_band, data_store=data_store, obs_table=obs_table_subset, exclusion_mask=exclusion_mask,save_bkg_scale=save_bkg_norm)
+    mosaic_cubes = StackedObsCubeMaker(empty_cube_images=ref_cube_images, empty_exposure_cube=ref_cube_exposure, offset_band=offset_band, data_store=data_store, obs_table=obs_table_subset, exclusion_mask=ref_cube_skymask,save_bkg_scale=save_bkg_norm)
+    mosaic_cubes.make_cubes(make_background_image=make_background_image, radius=radius)
     if 'COMMENT' in exclusion_mask.meta:
         del exclusion_mask.meta['COMMENT']
     filename_mask=outdir + '/exclusion_mask.fits'
@@ -426,7 +438,7 @@ def make_psf_cube(image_size,energy_cube, source_name, center_maps, center, ObsL
     """
     ref_cube=make_empty_cube(image_size, energy_cube,center_maps)
     header = ref_cube.sky_image_ref.to_image_hdu().header
-    energy_bins=ref_cube.energies()
+    energy_bins=ref_cube.energies(mode="edges")
     for i_E, E in enumerate(energy_bins[0:-1]):
         energy_band = Energy([energy_bins[i_E].value, energy_bins[i_E + 1].value], energy_bins.unit)
         energy = EnergyBounds.equal_log_spacing(energy_band[0].value, energy_band[1].value, 100, energy_band.unit)
@@ -445,10 +457,8 @@ def make_mean_rmf(energy_true, energy_reco, center, ObsList, outdir):
     Compute the mean psf for a set of observation and a given energy band
     Parameters
     ----------
-    energy_true: `~gammapy.utils.energy.EnergyBounds`  
-         true energy array
-    energy_reco: `~gammapy.utils.energy.EnergyBounds`   
-         reco energy array
+    energy_true: Tuple for the energy true bin: (Emin,Emax,nbins)
+    energy_reco: Tuple for the energy reco bin: (Emin,Emax,nbins)
     source_name: name of the source you want to compute the image
     center: SkyCoord of the source
     ObsList: ObservationList to use to compute the psf (could be different that the data_store for G0p9 for the GC for example)
@@ -461,7 +471,11 @@ def make_mean_rmf(energy_true, energy_reco, center, ObsList, outdir):
     """
     
     # Here all the observations have a center at less than 2 degrees from the Crab so it will be ok to estimate the mean psf on the Crab source postion (the area is define for offset equal to 2 degrees...)
-    rmf = ObsList.make_mean_edisp(position=center,e_true= energy_true, e_reco=energy_reco)
+    emin_true, emax_true, nbin_true = energy_true
+    emin_reco, emax_reco, nbin_reco = energy_reco
+    energy_true_bins = EnergyBounds.equal_log_spacing(emin_true, emax_true, nbin_true, 'TeV')
+    energy_reco_bins = EnergyBounds.equal_log_spacing(emin_reco, emax_reco, nbin_reco, 'TeV')
+    rmf = ObsList.make_mean_edisp(position=center,e_true= energy_true_bins, e_reco=energy_reco_bins)
     rmf.write(outdir+"/mean_rmf.fits", clobber=True)
     
 

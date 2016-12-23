@@ -28,26 +28,38 @@ from sherpa.models import Gauss2D, NormGauss2D
 pt.ion()
 
 
-def make_outdir_data(source_name, name_bkg, n_binE,config_name,image_size):
+def make_outdir_data(source_name, name_bkg, n_binE,config_name,image_size,for_integral_flux, use_cube=False, use_etrue=False):
     """
     directory where the images of the source are stored
     Parameters
     ----------
     source_name: name of the source you want to compute the image
     name_bkg: name of the bkg model you use to produce your bkg image
+    n_binE: number of ereco bin
+    config_name: 
+    image_size:
+    for_integral_flux: True if you want to compute the exposure to get the integral flux
+    use_cube: True if you want to compute cube analisys
+    use_etrue: True if you want to compute the exposure cube and psf mean cube in true energy
 
     Returns
     -------
     directory where your fits file ill go
     """
     outdir = os.path.expandvars('$Image') +"/"+config_name + "/Image_" + source_name + "_bkg_" + name_bkg + "/binE_" + str(n_binE) +"_size_image_"+str(image_size)+"_pix"
+    if not for_integral_flux:
+        outdir+= "_exposure_flux_diff"
+    if use_cube:
+        outdir+= "_cube_images"
+        if use_etrue:
+            outdir+= "_use_etrue"
     if os.path.isdir(outdir):
         return outdir
     else:
         print("The directory" + outdir + " doesn't exist")
 
 
-def make_outdir_profile(source_name, name_bkg, n_binE,config_name,image_size):
+def make_outdir_profile(source_name, name_bkg, n_binE,config_name,image_size,for_integral_flux,use_cube=False,use_etrue=False):
     """
     directory where we will store the profiles on lattitutde and longitude
     Parameters
@@ -59,14 +71,14 @@ def make_outdir_profile(source_name, name_bkg, n_binE,config_name,image_size):
     -------
     directory where your fits file ill go
     """
-    outdir = make_outdir_plot(source_name, name_bkg, n_binE,config_name,image_size) + "/profiles"
+    outdir = make_outdir_plot(source_name, name_bkg, n_binE,config_name,image_size,for_integral_flux,use_cube,use_etrue) + "/profiles"
     if os.path.isdir(outdir):
         return outdir
     else:
         make_path(outdir).mkdir()
         return outdir
 
-def make_outdir_plot(source_name, name_bkg, n_binE,config_name, image_size):
+def make_outdir_plot(source_name, name_bkg, n_binE,config_name, image_size,for_integral_flux, use_cube=False,use_etrue=False):
     """
     directory where we will store the plots
     Parameters
@@ -78,14 +90,14 @@ def make_outdir_plot(source_name, name_bkg, n_binE,config_name, image_size):
     -------
     directory where your fits file ill go
     """
-    outdir = os.path.expandvars('$Image') +"/"+config_name + "/Image_" + source_name + "_bkg_" + name_bkg + "/binE_" + str(n_binE) +"_size_image_"+str(image_size)+"_pix" + "/plot"
+    outdir = make_outdir_data(source_name, name_bkg, n_binE, config_name, image_size,for_integral_flux,use_cube,use_etrue) + "/plot"
     if os.path.isdir(outdir):
         return outdir
     else:
         make_path(outdir).mkdir()
         return outdir
 
-def make_outdir_filesresult(source_name, name_bkg, n_binE, config_name, image_size):
+def make_outdir_filesresult(source_name, name_bkg, n_binE, config_name, image_size,for_integral_flux, use_cube=False,use_etrue=False):
     """
     directory where we will store the plots
     Parameters
@@ -97,7 +109,7 @@ def make_outdir_filesresult(source_name, name_bkg, n_binE, config_name, image_si
     -------
     directory where your fits file ill go
     """
-    outdir = os.path.expandvars('$Image') +"/"+config_name + "/Image_" + source_name + "_bkg_" + name_bkg + "/binE_" + str(n_binE) +"_size_image_"+str(image_size)+"_pix" + "/files_result"
+    outdir = make_outdir_data(source_name, name_bkg, n_binE, config_name, image_size,for_integral_flux,use_cube,use_etrue) + "/files_result"
     if os.path.isdir(outdir):
         return outdir
     else:
