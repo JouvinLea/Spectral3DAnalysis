@@ -76,7 +76,7 @@ xpos_frozen=input_param["param_fit"]["gauss_configuration"]["xpos_frozen"]
 ypos_frozen=input_param["param_fit"]["gauss_configuration"]["ypos_frozen"]
 source_model=source_punctual_model(source_name, fwhm_init,fwhm_frozen, ampl_init, ampl_frozen, xpos_init, xpos_frozen, ypos_init, ypos_frozen)
 
-for i_E, E in enumerate(energy_bins[0:-2]):
+for i_E, E in enumerate(energy_bins[0:-1]):
     E1 = energy_bins[i_E].value
     E2 = energy_bins[i_E+1].value
     

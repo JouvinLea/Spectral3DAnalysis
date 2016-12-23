@@ -84,8 +84,8 @@ rmf=EnergyDispersion.read(outdir_data+"/mean_rmf.fits")
 
 # Setup combined spatial and spectral model
 spatial_model = NormGauss2DInt('spatial-model')
-#spectral_model = PowLaw1D('spectral-model')
-spectral_model = MyPLExpCutoff('spectral-model')
+spectral_model = PowLaw1D('spectral-model')
+#spectral_model = MyPLExpCutoff('spectral-model')
 dimensions=[exposure_3D.data.shape[1],exposure_3D.data.shape[2],rmf.data.shape[1],exposure_3D.data.shape[0]]
 source_model = CombinedModel3DIntConvolveEdisp(dimensions=dimensions,use_psf=True,exposure=exposure_3D,psf=psf_3D,spatial_model=spatial_model, spectral_model=spectral_model, edisp=rmf.data)
 
@@ -124,7 +124,7 @@ result = fit.fit()
 err=fit.est_errors()
 print(err)
 
-"""
+
 def PWL(E,phi_0,gamma):
     return phi_0*E**(-gamma)
 def EXP(E,phi_0,gamma,beta):
@@ -162,10 +162,18 @@ residus=(nobs.value-npred)/npred
 #Excess from the 2D fit energy band by energy band
 #TODO: for the moment je met a la main  aller chercher les cartes en 2D avec 250pix car les cubes sont a 50....
 
-outdir_result_image = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,250,for_integral_flux)
+outdir_result_image = make_outdir_filesresult(source_name, name_method_fond, len(energy_bins),config_name,250,for_integral_flux=False)
+name_2D="_region_"+str(extraction_region)+"pix"
+if freeze_bkg:
+    name_2D+="_bkg_fix"
+else:
+    name_2D+="_bkg_free"   
+
+if input_param["param_fit"]["use_EM_model"]:
+    name_2D+="_emission_galactic_True"
 #store the fit result for the model of the source
-filename_table_result=outdir_result+"/morphology_fit_result"+name+".txt"
-filename_covar_result=outdir_result+"/morphology_fit_covar_result"+name+".txt"
+filename_table_result=outdir_result_image+"/morphology_fit_result"+name_2D+".txt"
+filename_covar_result=outdir_result_image+"/morphology_fit_covar_result"+name_2D+".txt"
 table_models= Table.read(filename_table_result, format="ascii")
 table_covar=Table.read(filename_covar_result, format="ascii")
 #imax: until which energy bin we want to plot
@@ -175,46 +183,54 @@ excess=table_models[source_name+".ampl"][0:imax]
 err_excess_min=table_covar[source_name+".ampl_min"][0:imax]
 err_excess_max=table_covar[source_name+".ampl_max"][0:imax]
 residus_2D=(excess-npred[0:imax])/npred[0:imax]
-    
-
-pt.figure(1)
-pt.subplot(2,1,1)
+iok=np.where(err_excess_min!=0)[0]
+#iok=[0,1,2,3,4,5,6,7,8,9]
+import matplotlib.gridspec as gridspec
+fig =pt.figure(1)
+gs = gridspec.GridSpec(4, 1)
+ax1 = fig.add_subplot(gs[:3,:])
+#pt.subplot(2,1,1)
 pt.plot(energy_bins.log_centers, npred, label="npred")
 #pt.errorbar(energy_bins.log_centers.value, npred,yerr=err_npred, label="npred")
 pt.errorbar(energy_bins.log_centers.value, nobs.value,yerr=err_nobs.value, label="nobs=counts-bkg",linestyle='None', marker="*")
-pt.errorbar(E, excess, yerr=[err_excess_min, err_excess_max], linestyle="None", label="fit 2D")
+pt.errorbar(E[iok], excess[iok], yerr=[err_excess_min[iok], err_excess_max[iok]], linestyle="None", label="fit 2D")
 pt.ylabel("counts")
 pt.xscale("log")
-pt.subplot(2,1,2)
+pt.legend()
+ax2 = fig.add_subplot(gs[3,:],sharex=ax1) 
+#pt.subplot(2,1,2)
 pt.errorbar(energy_bins.log_centers.value, residus,yerr=err_nobs.value/npred,linestyle='None', marker="*", label="obs=counts-bkg")
-pt.errorbar(E, residus_2D,yerr=[err_excess_min/npred,, err_excess_max/npred,]linestyle='None', marker="*", label="fit 2D")
+pt.errorbar(E[iok], residus_2D[iok],yerr=[err_excess_min[iok]/npred[0:imax][iok], err_excess_max[iok]/npred[0:imax][iok]],linestyle='None', marker="*", label="fit 2D")
 pt.xlabel("Energy (TeV)")
 pt.ylabel("(nobs-npred)/npred")
 pt.xscale("log")
 pt.axhline(y=0, color='red',linewidth=2)
-pt.legend()
+pt.legend(fontsize = 'x-small')
+pt.subplots_adjust(hspace=0.1)
 #pt.savefig("npred_nobs_PA_"+source_name+".png")
 pt.savefig("npred_nobs_HAPFR_"+source_name+".png")
-pt.figure(2)
-pt.subplot(2,1,1)
+fig =pt.figure(2)
+gs = gridspec.GridSpec(4, 1)
+ax1 = fig.add_subplot(gs[:3,:])
 pt.plot(energy_bins.log_centers, npred, label="npred")
 #pt.errorbar(energy_bins.log_centers.value, npred,yerr=err_npred, label="npred")
 pt.errorbar(energy_bins.log_centers.value, nobs.value,yerr=err_nobs.value, label="nobs",linestyle='None', marker="*")
-pt.errorbar(E, excess, yerr=[err_excess_min, err_excess_max], linestyle="None", label="fit 2D")
+pt.errorbar(E[iok], excess[iok], yerr=[err_excess_min[iok], err_excess_max[iok]], linestyle="None", label="fit 2D")
 pt.ylabel("counts")
 pt.xscale("log")
 pt.yscale("log")
-pt.subplot(2,1,2)
+pt.legend()
+ax2 = fig.add_subplot(gs[3,:],sharex=ax1) 
 pt.errorbar(energy_bins.log_centers.value, residus,yerr=err_nobs.value/npred,linestyle='None', marker="*", label="obs=counts-bkg")
-pt.errorbar(E, residus_2D,yerr=[err_excess_min/npred,, err_excess_max/npred,]linestyle='None', marker="*", label="fit 2D")
+pt.errorbar(E[iok], residus_2D[iok],yerr=[err_excess_min[iok]/npred[0:imax][iok], err_excess_max[iok]/npred[0:imax][iok]],linestyle='None', marker="*", label="fit 2D")
 pt.xlabel("Energy (TeV)")
 pt.ylabel("(nobs-npred)/npred")
 pt.xscale("log")
-pt.legend()
+pt.legend(fontsize = 'x-small')
 pt.axhline(y=0, color='red',linewidth=2)
 #pt.savefig("npred_nobs_PA_log_"+source_name+".png")
 pt.savefig("npred_nobs_HAPFR_log_"+source_name+".png")
-"""
+
 
 
 
